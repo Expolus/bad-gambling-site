@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Bad Gambling Website</title>
+  <title>Bad Lootbox Website</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -17,7 +17,7 @@
     button {
       padding: 10px 20px;
       font-size: 1rem;
-      margin-bottom: 1rem;
+      margin: 0.5rem;
       cursor: pointer;
       background-color: #28a745;
       color: white;
@@ -33,40 +33,45 @@
       margin-bottom: 1rem;
     }
     #result-info { margin-bottom: 2rem; font-size: 1rem; }
-    #collection {
+    .popup, .fullview-popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      z-index: 1000;
+      max-height: 80%;
+      overflow: auto;
+      display: none;
+    }
+    .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: #888;
+    }
+    #collection-content {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 1rem;
-      width: 100%;
-      max-width: 800px;
+      padding: 1rem;
+      max-width: 1100px;
+      margin: 0 auto;
     }
     .collection-item {
       background: white;
       padding: 0.5rem;
       border-radius: 8px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      text-align: center;
       cursor: pointer;
-      position: relative;
-      font-size: 0.8rem;
     }
-    .collection-item canvas {
-      border-radius: 8px;
-      margin-bottom: 0.4rem;
-    }
-    .label { text-align: center; line-height: 1.2; }
-    .popup {
-      position: absolute;
-      background: white;
-      border: 1px solid #ccc;
-      padding: 0.5rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      z-index: 100;
-      font-size: 0.9rem;
-    }
+    .label { margin-top: 0.5rem; font-size: 0.9rem; }
     @media (max-width: 600px) {
       #canvas { width: 200px; height: 200px; }
       button { font-size: 1.2rem; padding: 12px 24px; }
@@ -76,31 +81,41 @@
 </head>
 <body>
 
-<h1>Bad Gambling Website</h1>
+<h1>Bad Lootbox Website</h1>
 <button id="roll">Roll!</button>
+<button id="collection">Collection</button>
 <canvas id="canvas" width="300" height="300"></canvas>
 <div id="result-info"></div>
 
-<h2>Your Collection</h2>
-<div id="collection"></div>
+<!-- Collection Popup -->
+<div id="collection-popup" class="popup" style="width:90%; max-width:1100px;">
+  <span class="close-btn" id="close-collection">&times;</span>
+  <div id="collection-content"></div>
+</div>
+
+<!-- Full View Popup -->
+<div id="fullview-popup" class="fullview-popup">
+  <span class="close-btn" id="close-fullview">&times;</span>
+  <canvas id="fullview-canvas" width="300" height="300"></canvas>
+  <div id="fullview-info" style="margin-top: 1rem; font-size:1rem; text-align:center;"></div>
+</div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const resultInfo = document.getElementById('result-info');
-const collectionDiv = document.getElementById('collection');
-const shapes = ['circle','square','triangle','star','hexagon','heart','pentagon'];
+const shapes = ['circle', 'square', 'triangle', 'star', 'hexagon', 'heart', 'pentagon'];
 let rolling = false, animationInterval;
 
-// random hex
+// Random hex color
 function randomColor() {
-  return '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
+  return '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6, '0');
 }
 
-// draw shape with gradient
+// Draw shape
 function drawShape(ctx, shape, top, bot, w, h) {
-  ctx.clearRect(0,0,w,h);
-  const g = ctx.createLinearGradient(0,0,0,h);
+  ctx.clearRect(0, 0, w, h);
+  const g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, top);
   g.addColorStop(1, bot);
   ctx.fillStyle = g;
@@ -121,7 +136,6 @@ function drawShape(ctx, shape, top, bot, w, h) {
   }
   ctx.fill();
 }
-
 function drawStar(ctx,cx,cy,sp,or,ir){
   let rot=Math.PI/2*3,step=Math.PI/sp;
   ctx.moveTo(cx,cy-or);
@@ -133,7 +147,6 @@ function drawStar(ctx,cx,cy,sp,or,ir){
   }
   ctx.closePath();
 }
-
 function drawPoly(ctx,cx,cy,s,r){
   const ang=2*Math.PI/s;
   ctx.moveTo(cx+r,cy);
@@ -141,107 +154,86 @@ function drawPoly(ctx,cx,cy,s,r){
     ctx.lineTo(cx+r*Math.cos(i*ang),cy+r*Math.sin(i*ang));
   }
 }
-
 function drawHeart(ctx,cx,cy,s){
   ctx.moveTo(cx,cy+s/4);
   ctx.bezierCurveTo(cx+s,cy-s/2,cx+s/2,cy-s,cx,cy-s/4);
   ctx.bezierCurveTo(cx-s/2,cy-s,cx-s,cy-s/2,cx,cy+s/4);
 }
 
-// roll: cycle 4 fake gradients→final
+// Roll function
 function roll() {
-  if(rolling) return;
-  rolling=true;
-  const shape=shapes[Math.floor(Math.random()*shapes.length)];
-  // fake gradients
-  const fakes=Array.from({length:4},()=>[randomColor(),randomColor()]);
-  let idx=0;
-  animationInterval=setInterval(()=>{
-    const [t,b]=fakes[idx];
-    drawShape(ctx,shape,t,b,canvas.width,canvas.height);
-    idx=(idx+1)%4;
-  },150);
+  if (rolling) return;
+  rolling = true;
+  const shape = shapes[Math.floor(Math.random()*shapes.length)];
+  const fakes = Array.from({length:4},()=>[randomColor(),randomColor()]);
+  let idx = 0;
+  animationInterval = setInterval(() => {
+    const [t,b] = fakes[idx];
+    drawShape(ctx, shape, t, b, canvas.width, canvas.height);
+    idx = (idx+1)%4;
+  }, 150);
 
-  setTimeout(()=>{
+  setTimeout(() => {
     clearInterval(animationInterval);
-    const top=randomColor(), bot=randomColor();
-    drawShape(ctx,shape,top,bot,canvas.width,canvas.height);
-    resultInfo.innerHTML =
-      `<strong>Shape:</strong> ${shape} | <strong>Top:</strong> ${top} | <strong>Bot:</strong> ${bot}`;
-
-    // save lastRoll
-    localStorage.setItem('lastRoll', JSON.stringify({shape,top,bot}));
-
-    // save to collection
+    const top = randomColor(), bot = randomColor();
+    drawShape(ctx, shape, top, bot, canvas.width, canvas.height);
+    resultInfo.innerHTML = `<strong>Shape:</strong> ${shape} | <strong>Top:</strong> ${top} | <strong>Bot:</strong> ${bot}`;
     const coll = JSON.parse(localStorage.getItem('collection')||'[]');
-    coll.push({shape,top,bot});
+    coll.push({shape, top, bot});
     localStorage.setItem('collection', JSON.stringify(coll));
-    addItem({shape,top,bot});
-
-    rolling=false;
-  },2000);
+    rolling = false;
+  }, 600); // 150ms x 4 = 600ms
 }
 
-// add collection item with labels
-function addItem({shape,top,bot}) {
-  const div=document.createElement('div');
-  div.className='collection-item';
-  div.dataset.shape=shape;
-  div.dataset.top=top;
-  div.dataset.bot=bot;
+// Open Collection
+document.getElementById('collection').addEventListener('click', () => {
+  const coll = JSON.parse(localStorage.getItem('collection') || '[]');
+  const collectionContent = document.getElementById('collection-content');
+  collectionContent.innerHTML = '';
+  coll.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'collection-item';
+    div.style.cursor = 'pointer';
+    
+    const mini = document.createElement('canvas');
+    mini.width = 100;
+    mini.height = 100;
+    drawShape(mini.getContext('2d'), item.shape, item.top, item.bot, 100, 100);
+    div.appendChild(mini);
 
-  const mini=document.createElement('canvas');
-  mini.width=100; mini.height=100;
-  drawShape(mini.getContext('2d'),shape,top,bot,100,100);
-  div.appendChild(mini);
+    const lbl = document.createElement('div');
+    lbl.className = 'label';
+    lbl.innerHTML = `<strong>${item.shape}</strong><br><span style="font-size:0.8rem;">${item.top}<br>${item.bot}</span>`;
+    div.appendChild(lbl);
 
-  const lbl=document.createElement('div');
-  lbl.className='label';
-  lbl.innerHTML = `<strong>${shape}</strong><br>${top}<br>${bot}`;
-  div.appendChild(lbl);
+    div.addEventListener('click', () => openFullView(item));
 
-  collectionDiv.appendChild(div);
-  div.addEventListener('click',()=>showPopup(div));
-}
-
-// load on startup
-function init() {
-  // load collection
-  JSON.parse(localStorage.getItem('collection')||'[]')
-    .forEach(item=>addItem(item));
-  // load last roll
-  const last = JSON.parse(localStorage.getItem('lastRoll'));
-  if(last) {
-    drawShape(ctx, last.shape, last.top, last.bot, canvas.width, canvas.height);
-    resultInfo.innerHTML =
-      `<strong>Shape:</strong> ${last.shape} | <strong>Top:</strong> ${last.top} | <strong>Bot:</strong> ${last.bot}`;
-  }
-}
-
-// popup & dismiss
-function showPopup(item) {
-  document.querySelectorAll('.popup').forEach(x=>x.remove());
-  const pop=document.createElement('div');
-  pop.className='popup';
-  pop.innerHTML =
-    `<strong>Shape:</strong> ${item.dataset.shape}<br>`+
-    `<strong>Top:</strong> ${item.dataset.top}<br>`+
-    `<strong>Bot:</strong> ${item.dataset.bot}`;
-  document.body.appendChild(pop);
-  const r=item.getBoundingClientRect();
-  pop.style.top  = (window.scrollY + r.top) + 'px';
-  pop.style.left = (r.right + 10) + 'px';
-
-  window.addEventListener('click', function fn(e){
-    if(!item.contains(e.target) && !pop.contains(e.target)) {
-      pop.remove();
-      window.removeEventListener('click', fn);
-    }
+    collectionContent.appendChild(div);
   });
+
+  document.getElementById('collection-popup').style.display = 'block';
+});
+
+// Close collection popup
+document.getElementById('close-collection').addEventListener('click', () => {
+  document.getElementById('collection-popup').style.display = 'none';
+});
+
+// Open full view popup
+function openFullView(item) {
+  const fullCtx = document.getElementById('fullview-canvas').getContext('2d');
+  drawShape(fullCtx, item.shape, item.top, item.bot, 300, 300);
+  document.getElementById('fullview-info').innerHTML = `<strong>${item.shape}</strong><br>${item.top}<br>${item.bot}`;
+  document.getElementById('fullview-popup').style.display = 'block';
 }
+
+// Close full view
+document.getElementById('close-fullview').addEventListener('click', () => {
+  document.getElementById('fullview-popup').style.display = 'none';
+});
 
 document.getElementById('roll').addEventListener('click', roll);
-window.addEventListener('load', init);
+
 </script>
 
 </body>
